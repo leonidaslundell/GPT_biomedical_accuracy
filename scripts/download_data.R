@@ -20,7 +20,7 @@ human_genes <- select(org.Hs.eg.db, keys=entrez, columns=c("SYMBOL"), keytype="E
 
 GPT_response <- NULL
 
-while(length(GPT_response)<=10){
+while(length(GPT_response)<=100){
   
   #some APIs seem to crash sometimes. Restart after 1 muntes.
   withTimeout({
