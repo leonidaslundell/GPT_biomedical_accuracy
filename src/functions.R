@@ -21,7 +21,7 @@ pubmed_query <- function(title = "Time-restricted feeding alters lipid and amino
 GPT_query <- function(symbol = "GLUT4", api_key){
   
   prompt_disease <- "Which specific conditions, diseases, or syndromes does GENESYMBOL play a role in. Format answer only with a list of specific names separated by new line without any elaboration. "
-  prompt_reference <- "Give me 5 scientific literature references to further my understanding about GENESYMBOL. Answer only with article title. Do not elaborate. Do not include authors. Separate by new line."
+  prompt_reference <- "Give me up to 5 scientific literature references to further my understanding about GENESYMBOL. Answer only with article title. Do not elaborate. Do not include authors. Separate by new line."
   
   prompt_disease <- gsub('GENESYMBOL', symbol, prompt_disease)
   prompt_reference <- gsub('GENESYMBOL', symbol, prompt_reference)
@@ -30,7 +30,7 @@ GPT_query <- function(symbol = "GLUT4", api_key){
                                                model = "gpt-3.5-turbo",
                                                temperature = 0.5,
                                                messages = list(list("role" = "system",
-                                                                    "content" = "Answer as an expert medical doctor, and geneticist."),
+                                                                    "content" = "Answer as an expert medical doctor, molecular biologist, and geneticist."),
                                                                list("role" = "user",
                                                                     "content" = prompt_disease)
                                                )
@@ -106,13 +106,4 @@ word_by_word_lcs <- function(GPT, GO, mean_calc = T){
   }
   
   return(GPT_GO_sim)
-}
-
-random_gene_name <- function(){
-  random_integer <- ceiling(runif(1, 1, 40000))
-  base_url <- "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=gene&retmode=json&id="
-  query <- paste0(base_url, random_integer)
-  gene_name <- fromJSON(file=query, simplify=FALSE)
-  gene_name <- gene_name[["result"]][[2]][["name"]]
-  return(gene_name)
 }
