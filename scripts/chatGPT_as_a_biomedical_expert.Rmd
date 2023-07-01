@@ -1,0 +1,181 @@
+---
+title: "Is chatGPT usefull in the biomedical domain?"
+author: "Leonidas Lundell, PhD"
+date: "2023-06-26"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(ggplot2)
+library(patchwork)
+
+theme_set(
+  theme_linedraw() +
+    theme(axis.text = element_text(size = 14)) +
+    theme(axis.title = element_text(size = 16)) +
+    theme(plot.title = element_text(size = 20))
+  )
+```
+
+# Introduction
+
+chatGPT and LLMs in general have taken the world by storm. While allot of attention has been given both to what you can and cannot do with it, allot of it is editorial and opinion based. I got curious to know the actual meassured accuracy of chatGPT in a topic that I know failry well: molecular biology and genetics.
+
+Additionaly, openAI cautions that "While we have safeguards in place, the system may occasionally generate incorrect or misleading information and produce offensive or biased content. It is not intended to give advice.". My analysis suggests that in the biomedical domain, chatGPT does not **occasionally generate incorrect** information, but rather in the vast majority of the cases.
+
+Overall, when asked to give diseases associated with a 100 random genes, chatGPT gives incorrect suggestions in over 80% of the cases. When asked to give relevant references to the genes, again you get dismal results. Surprisingly, prior knowledge about a gene has a small relationship with prediction accuracy, with a pearson correlation coefficient of .3, and prior knowledge about a gene has no ascosiation with number of predicted diseases.
+
+While these results do not suggest that chatGPT does not have any utility in biomedical knowledge domain, they suggest at a minimum caution when using chatGTP as a de novo knowledge generator. Moreover they suggest that chatGPT should not be used at the cutting edge of biomedical knowledge, and should obviously not be used as a medical assistant.
+
+These findings do not imply that chatGPT is entirely devoid of utility in the biomedical knowledge domain. However, they strongly caution against relying on chatGPT as a de novo knowledge generator. Moreover, they indicate that chatGPT should not be employed at the forefront of biomedical knowledge or as a medical assistant.
+
+```{r, echo=FALSE}
+load("~/Desktop/gpt_lies.Rdata")
+
+results_parsed <- sapply(result_list, \(x){
+  c(disease_accuracy = sum(x$accuracy >= 0.7, na.rm = T) / length(x$accuracy),
+    references_counts = length(x$gpt_refernce_predictions) - sum((x$gpt_refernce_predictions >= 1) & (x$gpt_refernce_predictions <= 3)),
+    references_accuracy = sum((x$gpt_refernce_predictions >= 1) & (x$gpt_refernce_predictions <= 3)) / length(x$gpt_refernce_predictions),
+    gene_references = x$gene_references,
+    prediction_length = length(x$accuracy))
+}) |> t() |> as.data.frame()
+```
+
+# chatGPT is a surprisingly poor advisor for gene disease associations
+
+```{r}
+ggplot(results_parsed) +
+  geom_histogram(aes(x=disease_accuracy), bins = 4) +
+  scale_x_continuous(breaks = c(0,.25,.5,.75,1), labels = scales::percent) +
+  scale_y_continuous(expand = c(0,0)) +
+  coord_cartesian(xlim = c(-.2,1.2), ylim = c(0, 60)) +
+  labs(title = "chatGPT disease prediction accuracy",
+       x = "Proportion of correct predicted diseases per gene",
+       y = "Number of queries")
+```
+
+# chatGPT is a terrible librarian
+
+```{r}
+ggplot(results_parsed) +
+  geom_histogram(aes(x=references_counts), bins = 4) +
+  scale_y_continuous(expand = c(0,0)) +
+  scale_x_continuous(breaks = seq(0,5,1)) +
+  coord_cartesian(xlim = c(0,5.5), ylim = c(0, 80)) +
+  labs(title = "chatGPT literature reference hallucinations",
+       x = "Number of halucinated references per gene",
+       y = "Number of queries")
+```
+
+# Comparing 
+
+```{r}
+linked_in_disease <- cut(results_parsed$disease_accuracy, c(-.5, .25, .5, .75, 1), labels = c("25%", "50%", "75%", "100%")) |> table() |> as.data.frame(stringsAsFactors = F)
+linked_in_disease$Freq <- linked_in_disease$Freq/sum(linked_in_disease$Freq)
+
+linked_in_refer <- cut(results_parsed$references_accuracy, c(-.5, .25, .5, .75, 1), labels = c("25%", "50%", "75%", "100%")) |> table() |> as.data.frame(stringsAsFactors = F)
+linked_in_refer$Freq <- linked_in_refer$Freq/sum(linked_in_refer$Freq)
+
+linked_in_viz <- rbind(linked_in_disease,linked_in_refer)
+linked_in_viz$data <- c(rep("Asked about diseases", 4), rep("Asked to give references", 4))
+linked_in_viz$Var1 <- factor(linked_in_viz$Var1, levels = unique(linked_in_viz$Var1))
+
+ggplot(linked_in_viz) +
+  geom_bar(aes(y = data, x = Freq, fill = Var1), 
+           stat = "identity", 
+           width = .5,
+           position = position_stack()) + 
+  labs(fill = "Proportion correct responses by chatGPT") + 
+  scale_fill_viridis_d(guide = guide_legend(reverse = TRUE), option = "D") +
+  theme_void() +
+  theme(legend.position = "bottom", 
+        axis.text.y = element_text(size = 12),
+        plot.margin = unit(c(.5,2,.5,.5), 'cm'))
+ADD 0% and 100% on the x-axis
+```
+
+# Prior knowledge about a gene is not associated with chatGPT predictions length
+
+```{r, fig.width=5,fig.width=5}
+ggplot(results_parsed) +
+  geom_point(aes(x=gene_references, y = prediction_length)) +
+  scale_x_log10() +
+  scale_y_log10() +
+  labs(title = "Prior knowledge does not matter for chatGPT",
+       x = "Number of references per gene",
+       y = "Number of diseases predicted per gene")
+
+cor.test(log10(results_parsed$gene_references),
+         log10(results_parsed$prediction_length))
+```
+
+# Prior knowledge about a gene has a small effect on prediction accuracy
+
+```{r, fig.width=5,fig.width=5}
+ggplot(results_parsed) +
+  geom_point(aes(x=gene_references, y = disease_accuracy)) +
+  scale_x_log10() +
+  labs(title = "",
+       x = "Number of references per gene",
+       y = "Number of diseases predicted per gene")
+
+cor.test(log10(results_parsed$gene_references),
+         results_parsed$disease_accuracy)
+```
+
+<!-- # Manual inspection -->
+
+<!-- ```{r} -->
+<!-- manual_inspection <- sapply(names(result_list), \(gene){ -->
+<!--   x <- result_list[[gene]] -->
+<!--   list(predicted_disease = x$gpt_out$disease,  -->
+<!--        gene = gene) -->
+<!-- }) -->
+<!-- names(manual_inspection) <- names(result_list) -->
+<!-- manual_inspection <- manual_inspection |>  -->
+<!--   reshape2::melt(id.vars = c("predicted_disease", "true_disease", "gene")) -->
+<!-- colnames(manual_inspection) <- c("Gene","Actual disease", "GPT predicted disease") -->
+
+<!-- DT::datatable(manual_inspection, -->
+<!--               options = list( -->
+<!--                 lengthMenu = list(c(25, 50, -1), -->
+<!--                                   c('25', '50', 'All')), -->
+<!--                 paging = T)) -->
+<!-- ``` -->
+
+# Conclusion
+
+These results do not suggest that chatGPT is not useful. Rather they highlight that its current iteration is not a universal reasoning machine. Using chatGPT with a internet search plugin will obviously yield much more accurate results. But at that point, perhaps you can google too :)
+
+# Method
+
+## Ground truth
+
+Random genes were selected from the [Reactome](https://reactome.org/) database, which provides comprehensive descriptions of genes in terms of their biological functions. These genes were then queried against the [UniProt](https://www.uniprot.org/) database to obtain disease associations. Although this approach may not capture all possible gene-disease associations, it represents a state-of-the-art compilation of human knowledge.
+
+Genes without any disease associations referenced in the [UniProt](https://www.uniprot.org/) database were excluded from further analysis. Additionally, the pubmed database was queried for each suggested reference provided by chatGPT, using the title for each gene queried and both the abstract and title for each gene.
+
+I choose to explore the accuracy of gene disease predictionsinstead of function, using for example [GO terms](http://geneontology.org/), since the language used GO terms is allot more general compared to the specific names founds in diseases.
+
+## chatGPT queries
+
+For each gene with associated [UniProt](https://www.uniprot.org/) diseases, queries were made to chatGPT using the following prompts, substituting "GENESYMBOL" with the actual gene symbol:
+
+Answer as an expert medical doctor, molecular biologist, and geneticist: Which specific conditions, diseases, or syndromes does GENESYMBOL play a role in? Please format your answer as a list of specific names, separated by new lines, without elaboration.
+
+Answer as an expert medical doctor, molecular biologist, and geneticist: Provide up to 5 scientific literature references to further my understanding about GENESYMBOL. Please only provide the article titles, without elaboration or author names. Separate the titles by new lines.
+
+The responses obtained from each query were cleaned to remove extra characters and filtered based on response length and structure.
+
+## Defining Accuracy of Responses
+
+To determine the accuracy of ChatGPT responses, a fairly broad and generous approach was taken. Accuracy was assessed by calculating the Longest Common Substring (LCS) between the diseases suggested by ChatGPT and all the diseases associated with the same gene in the [UniProt](https://www.uniprot.org/) database. The average LCS score was computed for all the words within each predicted disease. A threshold of 70% similarity was set to determine if a response was deemed accurate.
+
+This approach is far from 100% accurate, and some false positives and false negatives will clearly be included. At the same time, I have performed manual inspection of the data and I am confident in these results.
+
+## Code availability
+
+All code and dat is available on <https://github.com/leonidaslundell/GPT_biomedical_accuracy>.
