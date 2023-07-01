@@ -34,3 +34,4 @@ po/*~
 # RStudio Connect folder
 rsconnect/
 GPT_biomedical_accuracy.Rproj
+.DS_Store
