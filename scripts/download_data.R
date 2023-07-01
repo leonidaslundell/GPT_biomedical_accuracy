@@ -35,11 +35,9 @@ while(length(GPT_response)<=100){
       GPT_response[[symbol]]$disease <- disease
       
       #to not pass the per minute query limits
-      Sys.sleep(25)
       gpt <- try(GPT_query(symbol, key))
       if(class(gpt) == "try-error"){
         #Sometimes limit is reached in anycase. 
-        Sys.sleep(60)
         gpt <- GPT_query(symbol, key)
       }
       
