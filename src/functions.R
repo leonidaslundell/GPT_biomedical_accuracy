@@ -18,7 +18,7 @@ pubmed_query <- function(title = "Time-restricted feeding alters lipid and amino
   return(reference)
 }
 
-GPT_query <- function(symbol = "GLUT4"){
+GPT_query <- function(symbol = "GLUT4", api_key){
   
   prompt_disease <- "Which specific conditions, diseases, or syndromes does GENESYMBOL play a role in. Format answer only with a list of specific names separated by new line without any elaboration. "
   prompt_reference <- "Give me 5 scientific literature references to further my understanding about GENESYMBOL. Answer only with article title. Do not elaborate. Do not include authors. Separate by new line."
@@ -26,7 +26,7 @@ GPT_query <- function(symbol = "GLUT4"){
   prompt_disease <- gsub('GENESYMBOL', symbol, prompt_disease)
   prompt_reference <- gsub('GENESYMBOL', symbol, prompt_reference)
   
-  gpt_answer_disease <- create_chat_completion(openai_api_key = Sys.getenv("api_key"),
+  gpt_answer_disease <- create_chat_completion(openai_api_key = api_key,
                                                model = "gpt-3.5-turbo",
                                                temperature = 0.5,
                                                messages = list(list("role" = "system",
@@ -55,7 +55,7 @@ GPT_query <- function(symbol = "GLUT4"){
   
   gpt_answer_disease <- reformat(gpt_answer_disease$choices$message.content)
   
-  gpt_answer_reference <- create_chat_completion(openai_api_key = "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",
+  gpt_answer_reference <- create_chat_completion(openai_api_key = api_key,
                                                  model = "gpt-3.5-turbo",
                                                  temperature = 0.5,
                                                  messages = list(list("role" = "system",
