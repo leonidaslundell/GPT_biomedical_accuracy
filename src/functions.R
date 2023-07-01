@@ -26,7 +26,7 @@ GPT_query <- function(symbol = "GLUT4"){
   prompt_disease <- gsub('GENESYMBOL', symbol, prompt_disease)
   prompt_reference <- gsub('GENESYMBOL', symbol, prompt_reference)
   
-  gpt_answer_disease <- create_chat_completion(openai_api_key = "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",
+  gpt_answer_disease <- create_chat_completion(openai_api_key = Sys.getenv("api_key"),
                                                model = "gpt-3.5-turbo",
                                                temperature = 0.5,
                                                messages = list(list("role" = "system",
