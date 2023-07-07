@@ -28,7 +28,7 @@ theme_set(
 
 wd <- Sys.getenv("wd")
 
-load(file = paste0(wd, '/data/GPT_response_improved_query.Rdata'))
+load(file = paste0(wd, '/data/GPT_3.5.Rdata'))
 ```
 
 ```{r, echo=FALSE}
@@ -73,9 +73,9 @@ As you can see below, the majority of the responses failed to include any of the
 ```{r}
 ggplot(results_parsed) +
   geom_histogram(aes(x=disease_accuracy), bins = 5, fill = "midnightblue") +
-  scale_x_continuous(breaks = c(0,.25,.5,.75,1), labels = scales::percent) +
-  scale_y_continuous(expand = c(0,0)) +
-  coord_cartesian(xlim = c(-.2,1.2), ylim = c(0, 700)) +
+  # scale_x_continuous(breaks = c(0,.25,.5,.75,1), labels = scales::percent) +
+  # scale_y_continuous(expand = c(0,0)) +
+  # coord_cartesian(xlim = c(-.2,1.2), ylim = c(0, 700)) +
   labs(title = "Disease prediction accuracy",
        x = "Proportion of correct predicted diseases per gene",
        y = "Number of queries")
@@ -85,7 +85,7 @@ ggplot(results_parsed) +
 
 It is well-understood ([by some](https://www.theguardian.com/technology/2023/jun/23/two-us-lawyers-fined-submitting-fake-court-citations-ChatGPT)) that ChatGPT hallucinates [references](https://blog.smu.edu/smulibraries/2023/01/20/artificial-intelligence-and-the-research-paper-a-librarians-perspective/)/[citations](https://www.cureus.com/articles/138667-artificial-hallucinations-in-ChatGPT-implications-in-scientific-writing#!/). I investigated this in the biomedical domain with the following query on the same genes as above:
 
-"... give me up to 5 scientific literature references to further my understanding about XYZ-123." <sub>see method below for full propmts</sub> .
+"... give me 5 or fewer scientific literature references to further my understanding" about XYZ-123." <sub>see method below for full propmts</sub> .
 
 Again, the results were unimpressive with around `r scales::percent(sum(results_parsed$references_accuracy == 0)/1000)` of queries containing no real references, and only `r sum(results_parsed$references_accuracy == 1)` queries with no hallucinations. Note that this analysis does not even consider whether the references are relevant, but rather only whether the title exists in the biomedical literature.
 
@@ -113,7 +113,7 @@ cor_res_pred_size <- cor.test(results_parsed$gene_references,
 cor_res_pred_size$estimate <- round(cor_res_pred_size$estimate, 2)
 ```
 
-Looking through the list of genes that were queried I realized that some genes were clearly more well studied and famous than others. That made me wonder prior gene knowledge influences ChatGPT's responses. I investigated this question by comparing the disease prediction accuracy with the number of references each genes has. As you can see below there was a very weak relationship between accuracy and prior knowledge, with a Spearman's ρ of `r cor_res_accur$estimate`.
+Looking through the list of genes that were queried I realized that some genes were clearly more well studied and better understood than others. That made me wonder prior gene knowledge influences ChatGPT's responses. I investigated this question by comparing the disease prediction accuracy with the number of references each genes has. As you can see below there was a very weak relationship between accuracy and prior knowledge, with a Spearman's ρ of `r cor_res_accur$estimate`.
 
 ```{r, fig.width=5,fig.width=5, results='hide'}
 ggplot(results_parsed) +
@@ -161,57 +161,26 @@ Finally, my approach to defining true positives was improvised and perhaps a lit
 
 ## Manual inspection of data
 
-```{python}
-import matplotlib.pyplot as plt
-import numpy as np
-from shiny import App, render, ui
-
-app_ui = ui.page_fluid(
-    ui.layout_sidebar(
-        ui.panel_sidebar(
-            ui.input_slider("n", "N", 0, 100, 20),
-        ),
-        ui.panel_main(
-            ui.output_plot("histogram"),
-        ),
-    ),
-)
-
-
-def server(input, output, session):
-    @output
-    @render.plot(alt="A histogram")
-    def histogram():
-        np.random.seed(19680801)
-        x = 100 + 15 * np.random.randn(437)
-        plt.hist(x, input.n(), density=True)
-
-
-app = App(app_ui, server, debug=True)
-
-```
-
-
 ```{r}
-manual_inspection <- lapply(names(GPT_response), \(gene){
-  x <- GPT_response[[gene]]
-  list(predicted_disease = x$gpt_out$disease,
-       true_disease = x$disease,
-       gene = gene)
-})
-
-names(manual_inspection) <- names(GPT_response)
-
-manual_inspection <- manual_inspection |>
-  reshape2::melt(id.vars = c("predicted_disease", "true_disease", "gene"))
-
-colnames(manual_inspection) <- c("Gene","Actual disease", "GPT predicted disease")
-
-DT::datatable(manual_inspection,
-              options = list(
-                lengthMenu = list(c(25, 50, -1),
-                                  c('25', '50', 'All')),
-                paging = T))
+# manual_inspection <- lapply(names(GPT_response), \(gene){
+#   x <- GPT_response[[gene]]
+#   list(predicted_disease = x$gpt_out$disease,
+#        true_disease = x$disease,
+#        gene = gene)
+# })
+# 
+# names(manual_inspection) <- names(GPT_response)
+# 
+# manual_inspection <- manual_inspection |>
+#   reshape2::melt(id.vars = c("predicted_disease", "true_disease", "gene"))
+# 
+# colnames(manual_inspection) <- c("Gene","Actual disease", "GPT predicted disease")
+# 
+# DT::datatable(manual_inspection,
+#               options = list(
+#                 lengthMenu = list(c(25, 50, -1),
+#                                   c('25', '50', 'All')),
+#                 paging = T))
 ```
 
 ## Method
@@ -240,7 +209,7 @@ was combined with:
 
 or to get the references:
 
-"For the text below, give me up to 5 scientific literature references to further my understanding about GENESYMBOL. Answer only with article title. Do not elaborate. Do not include authors. Separate by new line. Text:\n"
+"For the text below, give me 5 or fewer scientific literature references to further my understanding. Answer only with article title. Do not elaborate. Do not include authors. Separate by new line. Text:\n"
 
 The responses obtained from each query were cleaned to remove extra characters and filtered based on response length and structure.
 
