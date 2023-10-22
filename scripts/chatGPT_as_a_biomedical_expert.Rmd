@@ -2,22 +2,28 @@
 title: "ChatGPT in biomedical reasearch"
 author: "Leonidas Lundell, PhD"
 date: "2023-06-26"
-output: 
-  html_document:
-editor_options: 
-  chunk_output_type: console
+output:
+  html_document: null
+  pdf_document: default
+editor_options:
+  chunk_output_type: inline
 ---
 
 <!-- toc: true -->
+
 <!--     toc_depth: 2 -->
+
 <!--     toc_float: false -->
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,
                       fig.align = 'center',
-                      message = FALSE)
+                      message = FALSE,
+                      warning = FALSE)
 library(ggplot2)
-library(patchwork)
+library(tidyverse)
+library(scales)
+library(data.table)
 
 theme_set(
   theme_linedraw() +
@@ -27,139 +33,199 @@ theme_set(
   )
 
 wd <- Sys.getenv("wd")
+data <- paste0(wd, "/data/")
 
-load(file = paste0(wd, '/data/GPT_3.5.Rdata'))
-```
+load(paste0(data, "GPT_response.Rdata"))
 
-```{r, echo=FALSE}
-results_parsed <- sapply(GPT_response, \(x){
-  c(disease_accuracy = sum(x$accuracy >= 0.7, na.rm = T) / length(x$accuracy),
-    references_accuracy = sum((x$gpt_refernce_predictions >= 1) & (x$gpt_refernce_predictions <= 3)) / length(x$gpt_refernce_predictions),
-    references_lenght = length(x$gpt_refernce_predictions),
-    gene_references = x$gene_references,
-    prediction_length = length(x$accuracy))
-}) |> t()
-results_parsed <- apply(results_parsed, MARGIN = 2, as.numeric) |> as.data.frame()
+diseases <- fread(paste0(data, "human_disease_textmining_filtered.tsv"))[,1:4]
+colnames(diseases) <- c("identifier", "symbol", "DO_ID", "disease")
+
+well_known$knowledge <- "well known"
+intermediate_known$knowledge <- "intermediate known"
+
+results <- rbind(intermediate_known, well_known)
+results$gene_hits <- as.numeric(results$gene_hits)
+results$ref_correct <- as.numeric(results$ref_correct)
+results$correct <- as.factor(results$correct)
 ```
 
 # Introduction
 
 ChatGPT and LLMs in general have taken the world by storm. A lot of attention has been given to what you can and cannot do with it, both analytically and opinion-based. I got curious to know whether ChatGPT can be helpful in a topic that I know well: molecular biology and genetics.
 
-[OpenAIs](https://arxiv.org/pdf/2303.08774.pdf) own published analysis suggests that ChatGPT performs in the top 4/5ths of students taking the Advanced Placement (AP) biology exam, and scores 53% on the Medical Knowledge Self-Assessment Program. These observations have been generally replicated in various other contexts, including descriptions of medical [conditions](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10002821/) and tests given to medical [students](https://pubmed.ncbi.nlm.nih.gov/36753318/).
+[OpenAIs](https://arxiv.org/pdf/2303.08774.pdf) own published analysis suggests that ChatGPT performs as if it is in the top 4/5ths of students taking the Advanced Placement (AP) biology exam, and scores 53% on the Medical Knowledge Self-Assessment Program. These observations have been generally replicated in various other contexts, including descriptions of medical [conditions](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10002821/) and tests given to medical [students](https://pubmed.ncbi.nlm.nih.gov/36753318/).
 
-Together, this suggest that ChatGPT could be useful tool for biomedical research. 
+Together, this suggest that ChatGPT might be useful tool for biomedical research. However, there's the looming question of its tendency to "hallucinate" or generate information that isn't accurate. I set out to understand whether chatGPT would be useful as an assistant or database to understand gene disease relationships.
 
-The analysis below suggests that in the biomedical domain, ChatGPT does not **occasionally generate incorrect** information as OpenAI cautions, but rather in the clear majority of the cases. Overall, when asked to give diseases associated with random gene, ChatGPT gives incorrect suggestions in over `r scales::percent(sum(results_parsed$disease_accuracy != 1)/1000)` of the cases. When asked to give relevant literature material to the genes, the results are again not useful in the vast majority of the cases. Most worryingly in my opinion, prior knowledge about a gene has a weak relationship with prediction accuracy and with number of predicted diseases.
+While I have a definitive answer on whether chatGPT hallucinates, I think that the most important insight is the value of context.
 
-These results **do not suggest** that ChatGPT is *not* useful. Rather, these results further narrow its use-case: they highlight that chatGPT might not be usefull for getting ideas in the biomedical domain, or trying to make sense of your RNA & DNA sequencing results. Moreover it suggests that ChatGPT should not be used at the cutting edge of biomedical knowledge, and should obviously not be used for medical advice. 
+In the analysis below, I analyze:
 
-As this technology evolves these results will most probably not remain correct. But as of 2023 and gpt-3.5.
+-   The performance of chatGPT 3.5 and 4 with gene disease associations of *well known genes*
 
-<!-- It is interesting to consider that other studies observe a lot higher accuracy and recall than the one found here. I suspect this is two fold: one is long lectical answers being easier correct, and the other is the topic per se. -->
+-   The performance of chatGPT 3.5 and 4 with gene disease associations of *less known genes*
 
-<!-- <https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10002821/> -->
+-   The effect of context in the accuracy of chatGPT 4
 
-# ChatGPT is a surprisingly poor advisor for gene disease associations
+-   And the accuracy of generated references and follow up material
 
-In order to evaluate how well ChatGPT performs as an search engine or expert advisor for biomedical related questions, I submitted the query below with 1000 randomly choosen, and disease annotated genes, taken from the [Reactome](https://reactome.org/) database:
+# chatGPT as a biomedical assistant
 
-"Answer as an expert medical doctor, molecular biologist, and geneticist. Which clinically relevant conditions, specific diseases, or syndromes does the gene XYZ-123 play a role in."
+# Assumptions
 
-I compared the responses given by ChatGPT to the reported conditions recorded in the [UniProt](https://www.uniprot.org/) database. The answer was considered correct if the per word average Longest Common Substring (LCS) between the response and any of the Uniprot list of diseases was above 70%. I did not consider recall of the response as this would without a doubt be really poor.
+One, almost philosophical question, is how to define correct answers for a question like this.
 
-As you can see below, the majority of the responses failed to include any of the diseases reported in the Uniprot database, and only around `r scales::percent(sum(results_parsed$disease_accuracy == 1)/1000)` queries reported only relevant diseases, with an average of `r results_parsed[results_parsed$disease_accuracy == 1,"prediction_length"] |> mean() |> round(1)` predicted diseases.
+My basic premise, is that if a gene disease assocaitions is present in a scientific publications it is true. Imperfect, I know. I am also assuming that a LLM does not have the ability to draw conclusions from information that does not exist. Moreover, I am not counting false negatives, i.e. chatGPT not mentioning a "known" gene disease association. I am only considering accurarcy or false positives, i.e chatGPT is proposing a gene disease association that is not found in the litterature.
 
-```{r}
-ggplot(results_parsed) +
-  geom_histogram(aes(x=disease_accuracy), bins = 5, fill = "midnightblue") +
-  # scale_x_continuous(breaks = c(0,.25,.5,.75,1), labels = scales::percent) +
-  # scale_y_continuous(expand = c(0,0)) +
-  # coord_cartesian(xlim = c(-.2,1.2), ylim = c(0, 700)) +
-  labs(title = "Disease prediction accuracy",
-       x = "Proportion of correct predicted diseases per gene",
-       y = "Number of queries")
-```
+I decided to do this because
 
-# ChatGPT cannot help you understand the literature landscape of genes
+# Data sources
 
-It is well-understood ([by some](https://www.theguardian.com/technology/2023/jun/23/two-us-lawyers-fined-submitting-fake-court-citations-ChatGPT)) that ChatGPT hallucinates [references](https://blog.smu.edu/smulibraries/2023/01/20/artificial-intelligence-and-the-research-paper-a-librarians-perspective/)/[citations](https://www.cureus.com/articles/138667-artificial-hallucinations-in-ChatGPT-implications-in-scientific-writing#!/). I investigated this in the biomedical domain with the following query on the same genes as above:
+I am basing a large part of this analysis on the brilliant and continoually updated [text mining resource](https://diseases.jensenlab.org) from the [Jensen lab](https://jensenlab.org/people/larsjuhljensen/) in Copenhagen University. I choose to use text mining as opposed to a e.g. [SNP database](https://en.wikipedia.org/wiki/Single-nucleotide_polymorphism) as this would be more plausibly aligned to chatGPTs data ingestion, and also because SNPs are only one way of which genes affect disease.
 
-"... give me 5 or fewer scientific literature references to further my understanding" about XYZ-123." <sub>see method below for full propmts</sub> .
+Literature accucary and gene information was queried on NIHs PubMed database using an API.
 
-Again, the results were unimpressive with around `r scales::percent(sum(results_parsed$references_accuracy == 0)/1000)` of queries containing no real references, and only `r sum(results_parsed$references_accuracy == 1)` queries with no hallucinations. Note that this analysis does not even consider whether the references are relevant, but rather only whether the title exists in the biomedical literature.
+In order to to understand the effect of prior knowledge on accuracy, I selected either the 5% most frequent diseases and top 5% of disease associated genes, or the 20%-25% most frequent diseases with corresponding 20-25% disease associated genes. From the selected genes I then randomly sampled 100 to analyze.
+
+This approach also generates a multiple choice selection to choose from, giving me an indication to the effect of context. The selected **top 5% genes (well known genes from now on)** had around `r round(diseases[symbol %in% rownames(well_known), n_distinct(disease)], -2)` associated diseases, and the **20-25% genes (less known genes from now on)** had `r round(diseases[symbol %in% rownames(intermediate_known), n_distinct(disease)], -2)` associated diseases.
+
+Below you can see the number of PubMed mentions for the randomly selected genes:
 
 ```{r}
-ggplot(results_parsed) +
-  geom_histogram(aes(x=references_accuracy), bins = 5, fill = "midnightblue") +
-  scale_x_continuous(breaks = c(0,.25,.5,.75,1), labels = scales::percent) +
-  scale_y_continuous(expand = c(0,0)) +
-  coord_cartesian(xlim = c(-.2,1.2), ylim = c(0, 850)) +
-  labs(title = "Hallucinated citations",
-       x = "Number of hallucinated citations per gene",
-       y = "Number of queries")
+x_labels <- scale_x_discrete(labels = c("Less known genes", "Well known genes"))
+  
+results |> 
+  filter(model == "GPT-3.5") |> 
+  ggplot() +
+  geom_boxplot(
+    mapping = aes(x = knowledge, y = gene_hits, fill = knowledge),
+    color = "black") +
+  x_labels +
+  scale_y_continuous(trans = log10_trans(),
+                     breaks = trans_breaks("log10", function(x) 10^x),
+                     labels = trans_format("log10", math_format(10^.x))) +
+  scale_fill_viridis_d(option = "H") +
+  theme(legend.position = "none") +
+  labs(y = "Number of mentions in literature", x = "")
 ```
 
-# Prior gene knowledge has a small impact on ChatGPT responses
+The average number of literature mentions for the well known genes was around `r results[results$model == "GPT-3.5" & results$knowledge == "well known", "gene_hits"] |> mean() |> round(digits = -2)` and around `r results[results$model == "GPT-3.5" & results$knowledge == "intermediate known", "gene_hits"] |> mean() |> round(digits = -2)` for the less known genes.
+
+# chatGPT accuracy in gene disease associations
+
+For each of the selected genes I querried chatGPT 3.5 and chatGPT 4 with the follwing prompt:
+
+"Answer as an expert medical doctor, molecular biologist, and geneticist. Which disease from the diseaselist below is gene GENESYMBOL involved in? Reply only with the name of the disease. Diseaselist:", substituting GENESYMBOL and the providing the a list of diseases as appropriate.
+
+I defined correct responses as responses where at least one of the suggested diseases were associated with a disease, increasing the apparent accuracy of chatGPT.
 
 ```{r}
-#+0.5 since log10 0 is NA
-cor_res_accur <- cor.test(results_parsed$gene_references,
-                          results_parsed$disease_accuracy, method = "pearson",exact = FALSE )
-cor_res_accur$estimate <- round(cor_res_accur$estimate, 2)
-
-cor_res_pred_size <- cor.test(results_parsed$gene_references,
-                              results_parsed$prediction_length, method = "spearman",exact = FALSE )
-cor_res_pred_size$estimate <- round(cor_res_pred_size$estimate, 2)
+results |> 
+  group_by(knowledge, model) |> 
+  summarise(
+    accuracy = sum(as.logical(correct))/length(correct),
+  ) |> 
+  ggplot() +
+  geom_bar(mapping = aes(x = knowledge, y = accuracy, fill = model), 
+           stat = "identity", position = "dodge", color = "black") +
+  scale_fill_viridis_d() +
+  scale_y_continuous(breaks = seq(0, 1, .25),
+                     labels = paste0(seq(0, 100, 25), "%"),
+                     limits = c(0,1), 
+                     expand = c(0,0)) +
+  x_labels +
+  labs(x = "", y = "chatGPT accuracy")
 ```
 
-Looking through the list of genes that were queried I realized that some genes were clearly more well studied and better understood than others. That made me wonder prior gene knowledge influences ChatGPT's responses. I investigated this question by comparing the disease prediction accuracy with the number of references each genes has. As you can see below there was a very weak relationship between accuracy and prior knowledge, with a Spearman's ρ of `r cor_res_accur$estimate`.
+Intriguingly, chatGPT 4 performs stunningly good for well known genes, while the currenlty free version of chatGPT suggests at least one correct gene disease association 50% of the times. For less known genes, neither model performs usefully at all.
 
-```{r, fig.width=5,fig.width=5, results='hide'}
-ggplot(results_parsed) +
-  geom_smooth(aes(x=gene_references, y = disease_accuracy), method = 'lm', se = F, color = "gray") +
-  geom_point(aes(x=gene_references, y = disease_accuracy), color = "midnightblue") +
-  scale_x_log10() +
-  labs(title = "Prior knowledge and accuracy",
-       x = "Number of references",
-       y = "Proportion correct diseases predicted")
+# Context has a major effect on accuracy
+
+To better understand the effect of context as a provided disease list, I queried chatGPT 4 with the only well known genes. I then manually evaluated the responses against the gene disease database, giving chatGPT the benefit of the doubt. As examples, I scored metabolic syndrome as a correct response to T2D, and rheumatic disease with rheumatic arthitis. I suppose I could have asked GPT to do this, but I rather retain control, and I would have manually validated in either case. Overall, the results are not very encouraging:
+
+```{r}
+well_known_freeform <- cbind(well_known[101:200,], 
+                             freeform = well_known_freeform) |> 
+  summarise(
+    with_context = sum(as.logical(correct))/length(correct),
+    no_context = sum(as.logical(freeform))/length(freeform),
+  ) |> 
+  reshape::melt() 
+
+ggplot(well_known_freeform) +
+  geom_bar(mapping = aes(x = variable, y = value, fill = variable), 
+           stat = "identity", position = "dodge", color = "black") +
+  scale_fill_viridis_d(option = "E") +
+  scale_x_discrete(labels = c("No context", "With disease list"), limits = c("no_context", "with_context")) +
+  scale_y_continuous(breaks = seq(0, 1, .25),
+                     labels = paste0(seq(0, 100, 25), "%"),
+                     limits = c(0,1), 
+                     expand = c(0,0)) +
+  theme(legend.position = "none") +
+  labs(x = "", y = "chatGPT accuracy")
 ```
 
-I also investigated whether the ChatGPT response length, i.e. number of diseases in the response, was associated with the number of references. This relationship was also very weak, with Spearman's ρ of `r cor_res_pred_size$estimate`.
+Without context, chatGPT 4 performs around 30% worse than with context, and only 15% better than chatGPT 3.5 with context.
 
-```{r, fig.width=5,fig.width=5, results='hide'}
-ggplot(results_parsed) +
-  geom_smooth(aes(x=gene_references, y = prediction_length), method = 'lm', se = F, color = "gray") +
-  geom_point(aes(x=gene_references, y = prediction_length), color = "midnightblue") +
-  scale_x_log10() +
-  scale_y_log10() +
-  labs(title = "Prior knowledge and response length",
-       x = "Number of references per gene",
-       y = "Number of diseases predicted per gene")
+This benchmark is in my opinion the most important of this whole analysis. It is quite unrealistic that one would have a disease list to compare to in real life. Moreover, LLMs in general do not differentiate between suggestions and context, everything provided is a context regardless of how we consider it. By providing the most common diseases as a list to choose from, we are implicitly providing a context.
 
+It would be intresting to see if the prompt did not include any instruction about the list of diseases but simply stated a number of diseases.
+
+# You should really not be using chatGPT for references
+
+It is well-understood ([by some](https://www.forbes.com/sites/mollybohannon/2023/06/08/lawyer-used-chatgpt-in-court-and-cited-fake-cases-a-judge-is-considering-sanctions/)) that chatGPT hallucinates [references](https://blog.smu.edu/smulibraries/2023/01/20/artificial-intelligence-and-the-research-paper-a-librarians-perspective/)/[citations](https://www.cureus.com/articles/138667-artificial-hallucinations-in-ChatGPT-implications-in-scientific-writing#!/). To better understand how chatGPT behaves in the biomedical context, prompted it to:
+
+"Give me 5 or fewer scientific literature references to further my understanding of gene GENESYMBOL. Answer only with article title. Do not elaborate. Do not include authors. Separate by new line. Text:"
+
+```{r}
+results$ref_correct[results$ref_correct == (results$ref_correct |>  unique())[5]] <- 0.2
+results |> 
+  group_by(knowledge, model) |> 
+  count(ref_correct) |> 
+  transform(n = n/100) |> 
+  ggplot() +
+  geom_bar(mapping = aes(x = ref_correct, y = n, fill = model), 
+           stat = "identity", position = "dodge", width = 0.15) +
+  scale_fill_viridis_d() +
+  scale_y_continuous(breaks = seq(0, 1, .25),
+                     labels = paste0(seq(0, 100, 25), "%"),
+                     limits = c(0,1),
+                     expand = c(0,0)) +
+  scale_x_continuous(breaks = seq(0, .6, .2),
+                     labels = paste0(seq(0, 60, 20), "%"),
+                     limits = c(-0.1,.7)) +
+  facet_wrap(~knowledge,
+             labeller=as_labeller(
+               c("intermediate known" = "less well known",
+                           "well known" = "well known")
+             ))+
+  theme(strip.background = element_rect("white"),
+        strip.text = element_text(size = 14, color = "black")) +
+  labs(x = "Percentage of chatGPT references\nexisting in PubMed database",
+       y = "Percentage of responses")
 ```
 
-These two last figures give you another important data point on whether ChatGPT can be used for biomedical knowledge synthesis as any responses by ChatGPT need to be grounded in human knowledge.
+As you can see, chatGPT hallucinates references in the vast majority of cases, with over 75% of suggested references not existing in PubMed regardless of prior knowledge or model used.
+
+In addiontion to the poor accuracy of the responses, my personal opinion is that using chatGPT to find references is inappropriate simply because there are better tools to do so.
 
 # Conclusion
 
-The results above do not suggest that ChatGPT is not useful, but rather further narrows its use-case. Moreover, these observations highlight that its current iteration is not a universal reasoning machine, and that it might be less useful to use ChatGPT for getting ideas in the biomedical domain, or trying understanding your results when studing genes.
-
-Using ChatGPT with a internet search plugin will obviously yield much more accurate results. But at that point, perhaps you can google too.
-
-# Supplemental information
-
-## Limitations
-
-There are major limitations in this analysis, including the source of ground truth data, the format of the ChatGPT responses, and the approach to define true responses.
-
-The ground truth data was taken from the [UniProt](https://www.uniprot.org/) from the "Disease & Variants" section. The UniProt database contains "[both manually curated and automatically imported data from external sources such as dbSNP and ClinVar](https://www.uniprot.org/help/disease_phenotypes_variants_section)". While this is imperfect, it does represent a validated and reviewed set of disease~gene associations. Moreover, as I only considered precision (response truth) and not recall (response completeness), this issue was even further ameliorated.
-
-The response by ChatGPT was not always consistent, adding extra padding and sentences some times, or not answering using new line separation. I tried to fix this by including an as broad pre-processing approach, but nonetheless this was not always sufficient, in which case i removed that entry. That leads to data not missing at random in this analysis.
-
-Finally, my approach to defining true positives was improvised and perhaps a little basic. At the same time, manual inspection of results suggests that it was efficient enough, and I am including a table of all results below in case you want critically evaluate the results yourself.
-
 ## Manual inspection of data
+
+```{r}
+# paste0(data, "GPT_manual_review_response.Rdata")
+# 
+# set.seed(42)
+# well_known_manual <- sample(names(well_known_genes_4), 5)
+# intermediate_known_manual <- sample(names(intermediate_known_genes_3.5), 5)
+# 
+# sapply(well_known_genes_3.5[well_known_manual],\(x) x$disease)
+# sapply(well_known_genes_4[well_known_manual],\(x) x$disease)
+# sapply(intermediate_known_genes_3.5[intermediate_known_manual],\(x) x$disease)
+# sapply(intermediate_known_genes_4[intermediate_known_manual],\(x) x$disease)
+
+```
 
 ```{r}
 # manual_inspection <- lapply(names(GPT_response), \(gene){
@@ -183,44 +249,6 @@ Finally, my approach to defining true positives was improvised and perhaps a lit
 #                 paging = T))
 ```
 
-## Method
-
-### Ground truth
-
-Random genes were selected from the [Reactome](https://reactome.org/) database, which provides comprehensive descriptions of genes in terms of their biological functions. These genes were then queried against the [UniProt](https://www.uniprot.org/) database to obtain disease associations. Although this approach may not capture all possible gene-disease associations, it represents a state-of-the-art compilation of human knowledge.
-
-Genes without any disease associations referenced in the [UniProt](https://www.uniprot.org/) database were excluded from further analysis. Additionally, the [PubMed](https://pubmed.ncbi.nlm.nih.gov/) database was queried for each suggested reference provided by ChatGPT, using the title for each gene queried and both the abstract and title for each gene.
-
-I choose to explore the accuracy of disease predictions from genes, instead of gene function using for example [GO terms](http://geneontology.org/), since the language used in GO term descriptions would be would make evaluating the accuracy of ChatGPT predictions harder to evaluate.
-
-### ChatGPT queries
-
-I experimented with queries in several different styles with no discernible effect on final accuracy.
-
-For each gene with associated [UniProt](https://www.uniprot.org/) diseases, queries were made to ChatGPT using the following prompts and a temperature of 0.5, substituting "GENESYMBOL" with the actual gene symbol.
-
-The response of:
-
-"Answer as an expert medical doctor, molecular biologist, and geneticist. Which clinically relevant conditions, specific diseases, or syndromes does the gene GENESYMBOL play a role in." 
-
-was combined with:
-
-"From the text below, give me only the conditions, specific diseases, or syndromes. Format answer only with a list of specific names separated by new line without any elaboration. Text:".
-
-or to get the references:
-
-"For the text below, give me 5 or fewer scientific literature references to further my understanding. Answer only with article title. Do not elaborate. Do not include authors. Separate by new line. Text:\n"
-
-The responses obtained from each query were cleaned to remove extra characters and filtered based on response length and structure.
-
-### Defining Accuracy of Responses
-
-To determine the accuracy of ChatGPT responses, a fairly broad and generous approach was taken. Accuracy was assessed by calculating the longest common substring between the diseases suggested by ChatGPT and all the diseases associated with the same gene in the [UniProt](https://www.uniprot.org/) database. The average LCS score was computed for all the words within each predicted disease. A threshold of 70% similarity was set to determine if a response was deemed accurate.
-
-As an example, this constitues a true response: ""
-
-This approach is far from 100% accurate, and some false positives and false negatives will clearly be included. At the same time, I have performed manual inspection of the data and I am confident in these results.
-
-### Code availability
+# Code availability
 
 All code and data is available on <https://github.com/leonidaslundell/GPT_biomedical_accuracy>.
